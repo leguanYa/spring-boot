@@ -118,6 +118,7 @@ public abstract class AutoConfigurationPackages {
 	 */
 	static class Registrar implements ImportBeanDefinitionRegistrar, DeterminableImports {
 
+		//注册bean
 		@Override
 		public void registerBeanDefinitions(AnnotationMetadata metadata, BeanDefinitionRegistry registry) {
 			register(registry, new PackageImport(metadata).getPackageName());

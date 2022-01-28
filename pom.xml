@@ -12,6 +12,8 @@
 	<properties>
 		<revision>2.1.19.BUILD-SNAPSHOT</revision>
 		<main.basedir>${basedir}</main.basedir>
+		<!--设置disable为true-->
+		<disable.checks>true</disable.checks>
 	</properties>
 	<!-- Most elements are in profiles so they are stripped out during maven-flatten -->
 	<profiles>
@@ -107,6 +109,8 @@
 			<modules>
 				<module>spring-boot-project</module>
 				<!-- Samples are built via the invoker plugin -->
+				<!--新增spring-boot-samples-->
+				<module>spring-boot-samples</module>
 				<module>spring-boot-samples-invoker</module>
 				<module>spring-boot-tests</module>
 			</modules>

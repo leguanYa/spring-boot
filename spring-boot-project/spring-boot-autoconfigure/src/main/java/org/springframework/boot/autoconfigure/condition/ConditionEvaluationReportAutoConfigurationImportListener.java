@@ -37,8 +37,11 @@ class ConditionEvaluationReportAutoConfigurationImportListener
 	@Override
 	public void onAutoConfigurationImportEvent(AutoConfigurationImportEvent event) {
 		if (this.beanFactory != null) {
+			// 获取到条件评估报告器对象
 			ConditionEvaluationReport report = ConditionEvaluationReport.get(this.beanFactory);
+			// 将符合条件的自动配置类记录到unconditionalClasses集合中
 			report.recordEvaluationCandidates(event.getCandidateConfigurations());
+			// 将要exclude的自动配置类记录到exclusions集合中
 			report.recordExclusions(event.getExclusions());
 		}
 	}

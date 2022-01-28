@@ -50,25 +50,45 @@ class OnClassCondition extends FilteringSpringBootCondition {
 		// additional thread seems to offer the best performance. More threads make
 		// things worse
 		int split = autoConfigurationClasses.length / 2;
+
+		// 【1】开启一个新线程去扫描判断已经加载的一半自动配置类
 		OutcomesResolver firstHalfResolver = createOutcomesResolver(autoConfigurationClasses, 0, split,
 				autoConfigurationMetadata);
+
+		// 【2】这里用主线程去扫描判断已经加载的一半自动配置类
 		OutcomesResolver secondHalfResolver = new StandardOutcomesResolver(autoConfigurationClasses, split,
 				autoConfigurationClasses.length, autoConfigurationMetadata, getBeanClassLoader());
+
+		// 【3】先让主线程去执行解析一半自动配置类是否匹配条件
 		ConditionOutcome[] secondHalf = secondHalfResolver.resolveOutcomes();
+
+		// 【4】这里用新开启的线程取解析另一半自动配置类是否匹配
+		// 注意为了防止主线程执行过快结束，resolveOutcomes方法里面调用了thread.join()来
+		// 让主线程等待新线程执行结束，因为后面要合并两个线程的解析结果
 		ConditionOutcome[] firstHalf = firstHalfResolver.resolveOutcomes();
+
+		// 新建一个ConditionOutcome数组来存储自动配置类的筛选结果
 		ConditionOutcome[] outcomes = new ConditionOutcome[autoConfigurationClasses.length];
+
+		// 将前面两个线程的筛选结果分别拷贝进outcomes数组
 		System.arraycopy(firstHalf, 0, outcomes, 0, firstHalf.length);
 		System.arraycopy(secondHalf, 0, outcomes, split, secondHalf.length);
+
+		// 返回自动配置类的筛选结果
 		return outcomes;
 	}
 
 	private OutcomesResolver createOutcomesResolver(String[] autoConfigurationClasses, int start, int end,
 			AutoConfigurationMetadata autoConfigurationMetadata) {
+		// 新建一个StandardOutcomesResolver对象
 		OutcomesResolver outcomesResolver = new StandardOutcomesResolver(autoConfigurationClasses, start, end,
 				autoConfigurationMetadata, getBeanClassLoader());
 		try {
+
+			// new一个ThreadedOutcomesResolver对象，并将StandardOutcomesResolver类型的outcomesResolver对象作为构造器参数传入
 			return new ThreadedOutcomesResolver(outcomesResolver);
 		}
+		// 若上面开启的线程抛出AccessControlException异常，则返回StandardOutcomesResolver对象
 		catch (AccessControlException ex) {
 			return outcomesResolver;
 		}
@@ -135,6 +155,8 @@ class OnClassCondition extends FilteringSpringBootCondition {
 		private volatile ConditionOutcome[] outcomes;
 
 		private ThreadedOutcomesResolver(OutcomesResolver outcomesResolver) {
+			// 这里开启一个新的线程，这个线程其实还是利用StandardOutcomesResolver的resolveOutcomes方法
+			// 对自动配置类进行解析判断是否匹配
 			this.thread = new Thread(() -> this.outcomes = outcomesResolver.resolveOutcomes());
 			this.thread.start();
 		}
@@ -142,11 +164,13 @@ class OnClassCondition extends FilteringSpringBootCondition {
 		@Override
 		public ConditionOutcome[] resolveOutcomes() {
 			try {
+				// 调用子线程的Join方法，让主线程等待
 				this.thread.join();
 			}
 			catch (InterruptedException ex) {
 				Thread.currentThread().interrupt();
 			}
+			// 若子线程结束后，此时返回子线程的解析结果
 			return this.outcomes;
 		}
 
@@ -175,17 +199,27 @@ class OnClassCondition extends FilteringSpringBootCondition {
 
 		@Override
 		public ConditionOutcome[] resolveOutcomes() {
+			// 再调用getOutcomes方法来解析
 			return getOutcomes(this.autoConfigurationClasses, this.start, this.end, this.autoConfigurationMetadata);
 		}
 
 		private ConditionOutcome[] getOutcomes(String[] autoConfigurationClasses, int start, int end,
 				AutoConfigurationMetadata autoConfigurationMetadata) {
 			ConditionOutcome[] outcomes = new ConditionOutcome[end - start];
+			// 遍历每一个自动配置类
 			for (int i = start; i < end; i++) {
+				// TODO 对于autoConfigurationMetadata有个疑问：为何有些自动配置类的条件注解能被加载到autoConfigurationMetadata，而有些又不能，比如自己定义的一个自动配置类HelloWorldEnableAutoConfiguration就没有被存到autoConfigurationMetadata中
+				// 好像是没有在@Import引入
+				// 举个栗子，看下面的KafkaStreamsAnnotationDrivenConfiguration这个自动配置类
+				// 那么取出的就是StreamsBuilder类的全限定名即candidates = org.apache.kafka.streams.StreamsBuilder
 				String autoConfigurationClass = autoConfigurationClasses[i];
 				if (autoConfigurationClass != null) {
+					// 那么取出的就是StreamsBuilder类的全限定名即candidates = org.apache.kafka.streams.StreamsBuilder
 					String candidates = autoConfigurationMetadata.get(autoConfigurationClass, "ConditionalOnClass");
+					// 若自动配置类标有ConditionalOnClass注解且有值，此时调用getOutcome判断是否存在于类路径中
 					if (candidates != null) {
+						// 拿到自动配置类注解@ConditionalOnClass的值后，再调用getOutcome方法去判断匹配结果,若该类存在于类路径，则getOutcome返回null，否则非null
+						/*******************【主线，重点关注】******************/
 						outcomes[i - start] = getOutcome(candidates);
 					}
 				}
@@ -193,13 +227,19 @@ class OnClassCondition extends FilteringSpringBootCondition {
 			return outcomes;
 		}
 
+		// 返回的outcome记录的是不匹配的情况，不为null，则说明不匹配；为null，则说明匹配
 		private ConditionOutcome getOutcome(String candidates) {
+			// candidates的形式为“org.springframework.boot.autoconfigure.aop.AopAutoConfiguration.ConditionalOnClass=org.aspectj.lang.annotation.Aspect,org.aspectj.lang.reflect.Advice,org.aspectj.weaver.AnnotatedElement”
 			try {
+				// 自动配置类上@ConditionalOnClass的值只有一个的话，直接调用getOutcome方法判断是否匹配
 				if (!candidates.contains(",")) {
 					return getOutcome(candidates, this.beanClassLoader);
 				}
+
+				// 自动配置类上@ConditionalOnClass的值有多个的话，则遍历每个值（其值以逗号，分隔）
 				for (String candidate : StringUtils.commaDelimitedListToStringArray(candidates)) {
 					ConditionOutcome outcome = getOutcome(candidate, this.beanClassLoader);
+					// 可以看到，这里只要有一个不匹配的话，则返回不匹配结果
 					if (outcome != null) {
 						return outcome;
 					}
@@ -212,6 +252,11 @@ class OnClassCondition extends FilteringSpringBootCondition {
 		}
 
 		private ConditionOutcome getOutcome(String className, ClassLoader classLoader) {
+			// 调用classNameFilter的matches方法来判断`@ConditionalOnClass`指定的类存不存在类路径中
+			/******************【主线，重点关注】********************/
+			// 这里调用classNameFilter去判断className是否存在于类路径中，
+			// 其中ClassNameFilter又分为PRESENT和MISSING两种;目前只看到ClassNameFilter为MISSING的调用情况，
+			// 所以默认为true的话记录不匹配信息；若传入ClassNameFilter为PRESENT的话，估计还要再写一个else分支
 			if (ClassNameFilter.MISSING.matches(className, classLoader)) {
 				return ConditionOutcome.noMatch(ConditionMessage.forCondition(ConditionalOnClass.class)
 						.didNotFind("required class").items(Style.QUOTE, className));
