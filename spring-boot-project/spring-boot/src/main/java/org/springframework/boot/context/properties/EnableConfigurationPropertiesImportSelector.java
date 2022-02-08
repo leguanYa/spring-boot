@@ -49,11 +49,14 @@ import org.springframework.util.StringUtils;
  */
 class EnableConfigurationPropertiesImportSelector implements ImportSelector {
 
+	// IMPORTS数组即是要向spring容器中注册的bean
 	private static final String[] IMPORTS = { ConfigurationPropertiesBeanRegistrar.class.getName(),
 			ConfigurationPropertiesBindingPostProcessorRegistrar.class.getName() };
 
 	@Override
 	public String[] selectImports(AnnotationMetadata metadata) {
+		// 返回ConfigurationPropertiesBeanRegistrar和ConfigurationPropertiesBindingPostProcessorRegistrar的全限定名
+		// 即上面两个类将会被注册到Spring容器中
 		return IMPORTS;
 	}
 
@@ -62,14 +65,21 @@ class EnableConfigurationPropertiesImportSelector implements ImportSelector {
 	 */
 	public static class ConfigurationPropertiesBeanRegistrar implements ImportBeanDefinitionRegistrar {
 
+		// metadata是AnnotationMetadataReadingVisitor对象，存储了某个配置类的元数据
 		@Override
 		public void registerBeanDefinitions(AnnotationMetadata metadata, BeanDefinitionRegistry registry) {
+			// （1）得到@EnableConfigurationProperties注解的所有属性值,
+			// 比如@EnableConfigurationProperties(ServerProperties.class),那么得到的值是ServerProperties.class
+			// （2）然后再将得到的@EnableConfigurationProperties注解的所有属性值注册到容器中
 			getTypes(metadata).forEach((type) -> register(registry, (ConfigurableListableBeanFactory) registry, type));
 		}
 
 		private List<Class<?>> getTypes(AnnotationMetadata metadata) {
+			// 得到@EnableConfigurationProperties注解的所有属性值,
+			// 比如@EnableConfigurationProperties(ServerProperties.class),那么得到的值是ServerProperties.class
 			MultiValueMap<String, Object> attributes = metadata
 					.getAllAnnotationAttributes(EnableConfigurationProperties.class.getName(), false);
+			// 将属性值取出装进List集合并返回
 			return collectClasses((attributes != null) ? attributes.get("value") : Collections.emptyList());
 		}
 
@@ -80,8 +90,11 @@ class EnableConfigurationPropertiesImportSelector implements ImportSelector {
 
 		private void register(BeanDefinitionRegistry registry, ConfigurableListableBeanFactory beanFactory,
 				Class<?> type) {
+			// 得到type的名字，一般用类的全限定名作为bean name
 			String name = getName(type);
+			// 根据bean name判断beanFactory容器中是否包含该bean
 			if (!containsBeanDefinition(beanFactory, name)) {
+				//若不包含，那么注册bean definition
 				registerBeanDefinition(registry, name, type);
 			}
 		}

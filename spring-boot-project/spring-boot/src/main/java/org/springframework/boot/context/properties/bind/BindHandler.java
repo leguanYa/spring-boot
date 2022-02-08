@@ -36,6 +36,7 @@ public interface BindHandler {
 	};
 
 	/**
+	 * 	onStart方法在外部属性绑定前被调用
 	 * Called when binding of an element starts but before any result has been determined.
 	 * @param <T> the bindable source type
 	 * @param name the name of the element being bound
@@ -48,6 +49,7 @@ public interface BindHandler {
 	}
 
 	/**
+	 * onSuccess方法在外部属性成功绑定时被调用，该方法能够改变最终返回的属性值或对属性值进行校验
 	 * Called when binding of an element ends with a successful result. Implementations
 	 * may change the ultimately returned result or perform addition validation.
 	 * @param name the name of the element being bound
@@ -61,6 +63,8 @@ public interface BindHandler {
 	}
 
 	/**
+	 * onFailure方法在外部属性绑定失败（包括onSuccess方法里的逻辑执行失败）时被调用，
+	 * 该方法可以用来catch住相关异常或者返回一个替代的结果（跟微服务的降级结果有点类似，嘿嘿）
 	 * Called when binding fails for any reason (including failures from
 	 * {@link #onSuccess} calls). Implementations may choose to swallow exceptions and
 	 * return an alternative result.
@@ -77,6 +81,7 @@ public interface BindHandler {
 	}
 
 	/**
+	 * 	当外部属性绑定结束时（不管绑定成功还是失败）被调用
 	 * Called when binding finishes with either bound or unbound result. This method will
 	 * not be called when binding failed, even if a handler returns a result from
 	 * {@link #onFailure}.

@@ -34,12 +34,19 @@ public class ConfigurationPropertiesBindingPostProcessorRegistrar implements Imp
 
 	@Override
 	public void registerBeanDefinitions(AnnotationMetadata importingClassMetadata, BeanDefinitionRegistry registry) {
+		// 若容器中没有注册ConfigurationPropertiesBindingPostProcessor这个处理属性绑定的后置处理器，
+		// 那么将注册ConfigurationPropertiesBindingPostProcessor和ConfigurationBeanFactoryMetadata这两个bean
+		// 注意onApplicationEnvironmentPreparedEvent事件加载配置属性在先，然后再注册一些后置处理器用来处理这些配置属性
 		if (!registry.containsBeanDefinition(ConfigurationPropertiesBindingPostProcessor.BEAN_NAME)) {
+			// (1)注册ConfigurationPropertiesBindingPostProcessor后置处理器，用来对配置属性进行后置处理
 			registerConfigurationPropertiesBindingPostProcessor(registry);
+			// (2)注册一个ConfigurationBeanFactoryMetadata类型的bean，
+			// 注意ConfigurationBeanFactoryMetadata实现了BeanFactoryPostProcessor，然后其会在postProcessBeanFactory中注册一些元数据
 			registerConfigurationBeanFactoryMetadata(registry);
 		}
 	}
 
+	// 注册ConfigurationPropertiesBindingPostProcessor后置处理器
 	private void registerConfigurationPropertiesBindingPostProcessor(BeanDefinitionRegistry registry) {
 		GenericBeanDefinition definition = new GenericBeanDefinition();
 		definition.setBeanClass(ConfigurationPropertiesBindingPostProcessor.class);
@@ -48,6 +55,7 @@ public class ConfigurationPropertiesBindingPostProcessorRegistrar implements Imp
 
 	}
 
+	// 注册ConfigurationBeanFactoryMetadata后置处理器
 	private void registerConfigurationBeanFactoryMetadata(BeanDefinitionRegistry registry) {
 		GenericBeanDefinition definition = new GenericBeanDefinition();
 		definition.setBeanClass(ConfigurationBeanFactoryMetadata.class);

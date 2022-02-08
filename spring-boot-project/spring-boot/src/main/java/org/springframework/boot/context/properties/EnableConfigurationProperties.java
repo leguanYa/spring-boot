@@ -45,6 +45,7 @@ public @interface EnableConfigurationProperties {
 	 * with Spring. Standard Spring Beans will also be scanned regardless of this value.
 	 * @return {@link ConfigurationProperties} annotated beans to register
 	 */
+	//这个值指定的类就是ConfigurationProperties注解标注的类，其将会被注册到spring的容器中
 	Class<?>[] value() default {};
 
 }

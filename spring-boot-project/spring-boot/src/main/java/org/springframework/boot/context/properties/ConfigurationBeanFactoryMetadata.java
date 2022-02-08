@@ -46,16 +46,37 @@ public class ConfigurationBeanFactoryMetadata implements BeanFactoryPostProcesso
 
 	private ConfigurableListableBeanFactory beanFactory;
 
+	/**
+	 * beansFactoryMetadata集合存储beansFactory的元数据
+	 * key:某个bean的名字  value：FactoryMetadata对象（封装了工厂bean名和工厂方法名）
+	 * 比如下面这个配置类：
+	 *
+	 * @Configuration
+	 * public class ConfigA {
+	 *      @Bean
+	 *      public BeanXXX methodB（configA, ） {
+	 *          return new BeanXXX();
+	 *      }
+	 * }
+	 *
+	 * 那么：key值为"methodB"，value为FactoryMetadata（configA, methodB）对象，其bean属性值为"configA",method属性值为"methodB"
+	 */
 	private final Map<String, FactoryMetadata> beansFactoryMetadata = new HashMap<>();
 
 	@Override
 	public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) throws BeansException {
 		this.beanFactory = beanFactory;
+		// 遍历beanFactory的beanDefinitionName，即每个bean的名字（比如工厂方法对应的bean名字）
 		for (String name : beanFactory.getBeanDefinitionNames()) {
+			// 根据name得到beanDefinition
 			BeanDefinition definition = beanFactory.getBeanDefinition(name);
+			// 工厂方法名：一般是注解@Bean的方法名
 			String method = definition.getFactoryMethodName();
+			// 工厂bean名：一般是注解@Configuration的类名
 			String bean = definition.getFactoryBeanName();
 			if (method != null && bean != null) {
+				// 将beanDefinitionName作为Key，封装了工厂bean名和工厂方法名的FactoryMetadata对象作为value装入beansFactoryMetadata中
+//				System.out.println(name+"："+bean+"，"+method);
 				this.beansFactoryMetadata.put(name, new FactoryMetadata(bean, method));
 			}
 		}
@@ -97,8 +118,10 @@ public class ConfigurationBeanFactoryMetadata implements BeanFactoryPostProcesso
 
 	private static class FactoryMetadata {
 
+		// @Configuration注解的配置类的类名
 		private final String bean;
 
+		// @Bean注解的方法名
 		private final String method;
 
 		FactoryMetadata(String bean, String method) {

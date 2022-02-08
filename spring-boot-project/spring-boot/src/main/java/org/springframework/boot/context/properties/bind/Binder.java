@@ -182,6 +182,8 @@ public class Binder {
 	 * @return the binding result (never {@code null})
 	 */
 	public <T> BindResult<T> bind(String name, Bindable<T> target, BindHandler handler) {
+		// ConfigurationPropertyName.of(name)：将name（这里指属性前缀名）封装到ConfigurationPropertyName对象中
+		// 将外部配置属性绑定到目标对象target中
 		return bind(ConfigurationPropertyName.of(name), target, handler);
 	}
 
@@ -198,20 +200,31 @@ public class Binder {
 		Assert.notNull(name, "Name must not be null");
 		Assert.notNull(target, "Target must not be null");
 		handler = (handler != null) ? handler : BindHandler.DEFAULT;
+
+		// Context是Binder的内部类，实现了BindContext，Context可以理解为Binder的上下文，可以用来获取binder的属性比如Binder的sources属性
 		Context context = new Context();
+		// 进行属性绑定，并返回绑定属性后的对象bound，注意bound的对象类型是T，T就是@ConfigurationProperties注解的类比如ServerProperties
+		/********【主线，重点关注】************/
 		T bound = bind(name, target, handler, context, false);
+		// 将刚才返回的bound对象封装到BindResult对象中并返回
 		return BindResult.of(bound);
 	}
 
 	protected final <T> T bind(ConfigurationPropertyName name, Bindable<T> target, BindHandler handler, Context context,
 			boolean allowRecursiveBinding) {
+		// 清空Binder的configurationProperty属性值
 		context.clearConfigurationProperty();
 		try {
+			// 【1】调用BindHandler的onStart方法，执行一系列的责任链对象的该方法
 			target = handler.onStart(name, target, context);
 			if (target == null) {
 				return null;
 			}
+			// 【2】调用bindObject方法对Bindable对象target的属性进行绑定外部配置的值，并返回赋值给bound对象。
+			// 举个栗子：比如设置了server.port=8888,那么该方法最终会调用Binder.bindProperty方法，最终返回的bound的value值为8888
+			/************【主线：重点关注】***********/
 			Object bound = bindObject(name, target, handler, context, allowRecursiveBinding);
+			// 【3】封装handleBindResult对象并返回，注意在handleBindResult的构造函数中会调用BindHandler的onSucess，onFinish方法
 			return handleBindResult(name, target, handler, context, bound);
 		}
 		catch (Exception ex) {
@@ -245,16 +258,30 @@ public class Binder {
 
 	private <T> Object bindObject(ConfigurationPropertyName name, Bindable<T> target, BindHandler handler,
 			Context context, boolean allowRecursiveBinding) {
+		//application.properties配置文件中配置了spring.profiles.active=dev的话，那么将会进入return bindAggregate(name, target, handler, context, aggregateBinder);这个属性绑定的代码逻辑；
+		//application.properties配置文件中配置了server.port=8081的话，那么将会进入return bindBean(name, target, handler, context, allowRecursiveBinding);的属性绑定的逻辑。
+
+
+
+		// 从propertySource中的配置属性，获取ConfigurationProperty对象property即application.properties配置文件中若有相关的配置的话，
+		// 那么property将不会为null。举个栗子：假如你在配置文件中配置了spring.profiles.active=dev，那么相应property值为dev；否则为null
 		ConfigurationProperty property = findProperty(name, context);
+		// 若property为null，则不会执行后续的属性绑定相关逻辑
 		if (property == null && containsNoDescendantOf(context.getSources(), name)) {
+			// 如果property == null，则返回null
 			return null;
 		}
+		// 根据target类型获取不同的Binder，可以是null（普通的类型一般是Null）,MapBinder,CollectionBinder或ArrayBinder
 		AggregateBinder<?> aggregateBinder = getAggregateBinder(target, context);
+		// 若aggregateBinder不为null比如配置了spring.profiles属性（当然包括其子属性比如spring.profiles.active等）
 		if (aggregateBinder != null) {
+			// 若aggregateBinder不为null，则调用bindAggregate并返回绑定后的对象
 			return bindAggregate(name, target, handler, context, aggregateBinder);
 		}
+		// 若property不为null
 		if (property != null) {
 			try {
+				// 绑定属性到对象中，比如配置文件中设置了server.port=8888，那么将会最终调用bindProperty方法进行属性设置
 				return bindProperty(target, context, property);
 			}
 			catch (ConverterNotFoundException ex) {
@@ -266,6 +293,8 @@ public class Binder {
 				throw ex;
 			}
 		}
+		// 只有@ConfigurationProperties注解的类进行外部属性绑定才会走这里
+		/***********************【主线，重点关注】****************************/
 		return bindBean(name, target, handler, context, allowRecursiveBinding);
 	}
 
@@ -316,19 +345,49 @@ public class Binder {
 
 	private Object bindBean(ConfigurationPropertyName name, Bindable<?> target, BindHandler handler, Context context,
 			boolean allowRecursiveBinding) {
+		// 这里做一些ConfigurationPropertyState的相关检查
 		if (containsNoDescendantOf(context.getSources(), name) || isUnbindableBean(name, target, context)) {
 			return null;
 		}
+
+		// 这里新建一个BeanPropertyBinder的实现类对象，注意这个对象实现了bindProperty方法
+		/**
+		 * (propertyName, propertyTarget) -> bind(
+		 * 				name.append(propertyName), propertyTarget, handler, context, false);
+		 * 	等价于
+		 * 	new BeanPropertyBinder() {
+		 *		Object bindProperty(String propertyName, Bindable<?> target){
+		 *			bind(name.append(propertyName), propertyTarget, handler, context, false);
+		 *		}
+		 * 	}
+		 */
 		BeanPropertyBinder propertyBinder = (propertyName, propertyTarget) -> bind(name.append(propertyName),
 				propertyTarget, handler, context, false);
+
+		// type类型即@ConfigurationProperties注解标注的XxxProperties类
 		Class<?> type = target.getType().resolve(Object.class);
 		if (!allowRecursiveBinding && context.hasBoundBean(type)) {
 			return null;
 		}
+
+
+		// 真正实现将外部配置属性绑定到@ConfigurationProperties注解的XxxProperties类的属性中的逻辑应该就是在这句lambda代码了
+		/*******************【主线】***************************/
 		return context.withBean(type, () -> {
 			Stream<?> boundBeans = BEAN_BINDERS.stream().map((b) -> b.bind(name, target, context, propertyBinder));
 			return boundBeans.filter(Objects::nonNull).findFirst().orElse(null);
 		});
+
+		// 根据上面的lambda语句翻译如下：
+		/** 这里的T指的是各种属性绑定对象，比如ServerProperties
+		 * return context.withBean(type, new Supplier<T>() {
+		 * 	T get() {
+		 * 		Stream<?> boundBeans = BEAN_BINDERS.stream()
+		 * 					.map((b) -> b.bind(name, target, context, propertyBinder));
+		 * 			return boundBeans.filter(Objects::nonNull).findFirst().orElse(null);
+		 *        }
+		 *  });
+		 */
 	}
 
 	private boolean isUnbindableBean(ConfigurationPropertyName name, Bindable<?> target, Context context) {

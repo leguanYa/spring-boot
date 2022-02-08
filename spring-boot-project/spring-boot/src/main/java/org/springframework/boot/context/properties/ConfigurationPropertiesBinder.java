@@ -62,19 +62,32 @@ class ConfigurationPropertiesBinder {
 
 	private volatile Binder binder;
 
+
 	ConfigurationPropertiesBinder(ApplicationContext applicationContext, String validatorBeanName) {
+		// 将applicationContext封装到PropertySourcesDeducer对象中并返回
 		this.applicationContext = applicationContext;
+		// 获取属性源，主要用于在ConfigurableListableBeanFactory的后置处理方法postProcessBeanFactory中处理
 		this.propertySources = new PropertySourcesDeducer(applicationContext).getPropertySources();
+		// 如果没有配置validator的话，这里一般返回的是null
 		this.configurationPropertiesValidator = getConfigurationPropertiesValidator(applicationContext,
 				validatorBeanName);
+		// 检查实现JSR-303规范的bean校验器相关类在classpath中是否存在
 		this.jsr303Present = ConfigurationPropertiesJsr303Validator.isJsr303Present(applicationContext);
 	}
 
 	public void bind(Bindable<?> target) {
+
+		//【1】得到@ConfigurationProperties注解
 		ConfigurationProperties annotation = target.getAnnotation(ConfigurationProperties.class);
+
 		Assert.state(annotation != null, () -> "Missing @ConfigurationProperties on " + target);
+		// 【2】得到Validator对象集合，用于属性校验
 		List<Validator> validators = getValidators(target);
+		// 【3】得到BindHandler对象（默认是IgnoreTopLevelConverterNotFoundBindHandler对象），
+		// 用于对ConfigurationProperties注解的ignoreUnknownFields等属性的处理
 		BindHandler bindHandler = getBindHandler(annotation, validators);
+		// 【4】得到一个Binder对象，并利用其bind方法执行外部属性绑定逻辑
+		/********************【主线，重点关注】********************/
 		getBinder().bind(annotation.prefix(), target, bindHandler);
 	}
 
@@ -107,21 +120,35 @@ class ConfigurationPropertiesBinder {
 		return this.jsr303Validator;
 	}
 
+	// 注意BindHandler的设计技巧，运用了责任链模式，非常巧妙，值得借鉴
 	private BindHandler getBindHandler(ConfigurationProperties annotation, List<Validator> validators) {
+		//IgnoreTopLevelConverterNotFoundBindHandler 在处理外部属性绑定时的默认BindHandler，当属性绑定失败时会忽略最顶层的ConverterNotFoundException；
 		BindHandler handler = new IgnoreTopLevelConverterNotFoundBindHandler();
+		// 若注解@ConfigurationProperties的ignoreInvalidFields属性设置为true，
+		// 则说明可以忽略无效的配置属性例如类型错误，此时新建一个IgnoreErrorsBindHandler对象
 		if (annotation.ignoreInvalidFields()) {
+			//用来忽略无效的配置属性例如类型错误
 			handler = new IgnoreErrorsBindHandler(handler);
 		}
+		// 若注解@ConfigurationProperties的ignoreUnknownFields属性设置为true，
+		// 则说明配置文件配置了一些未知的属性配置，此时新建一个ignoreUnknownFields对象
 		if (!annotation.ignoreUnknownFields()) {
 			UnboundElementsSourceFilter filter = new UnboundElementsSourceFilter();
+			// 用来处理配置文件配置的未知的属性；
 			handler = new NoUnboundElementsBindHandler(handler, filter);
 		}
+		// 如果@Valid注解不为空，则创建一个ValidationBindHandler对象
 		if (!validators.isEmpty()) {
+			//利用校验器对绑定的结果值进行校验。
 			handler = new ValidationBindHandler(handler, validators.toArray(new Validator[0]));
 		}
+		// 遍历获取的ConfigurationPropertiesBindHandlerAdvisor集合，
+		// ConfigurationPropertiesBindHandlerAdvisor目前只在测试类中有用到
 		for (ConfigurationPropertiesBindHandlerAdvisor advisor : getBindHandlerAdvisors()) {
+			// 对handler进一步处理
 			handler = advisor.apply(handler);
 		}
+		// 返回handler
 		return handler;
 	}
 
@@ -131,7 +158,13 @@ class ConfigurationPropertiesBinder {
 	}
 
 	private Binder getBinder() {
+		// Binder是一个能绑定ConfigurationPropertySource的容器对象
 		if (this.binder == null) {
+			// 新建一个Binder对象，这个binder对象封装了ConfigurationPropertySources，PropertySourcesPlaceholdersResolver，ConversionService和PropertyEditorInitializer对象
+			// 将PropertySources对象封装成SpringConfigurationPropertySources对象并返回
+			// 将PropertySources对象封装成PropertySourcesPlaceholdersResolver对象并返回，
+			// 从容器中获取到ConversionService对象
+			// 得到Consumer<PropertyEditorRegistry>对象，这些初始化器用来配置property editors，property editors通常可以用来转换值
 			this.binder = new Binder(getConfigurationPropertySources(), getPropertySourcesPlaceholdersResolver(),
 					getConversionService(), getPropertyEditorInitializer());
 		}
